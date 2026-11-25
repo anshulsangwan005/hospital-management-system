@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: hms-db
+    environment:
+      POSTGRES_USER: hms
+      POSTGRES_PASSWORD: hms_password
+      POSTGRES_DB: hospital
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Executed automatically on first start (empty volume), in filename order
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hms -d hospital"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Optional: run API + UI in containers too (`docker compose --profile full up --build`)
+  api:
+    profiles: ["full"]
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://hms:hms_password@db:5432/hospital
+      JWT_SECRET: change-this-to-a-long-random-string
+      ENC_KEY: change-this-encryption-key
+      CORS_ORIGINS: http://localhost:5173,http://localhost:8080
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    profiles: ["full"]
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000/api
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
